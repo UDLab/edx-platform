@@ -1,0 +1,4 @@
+{% load i18n %}
+{% autoescape off %}
+{% blocktrans trimmed %}Your favorite course {{ display_name }} {% endblocktrans %}
+{% endautoescape %}

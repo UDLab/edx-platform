@@ -29,4 +29,6 @@ urlpatterns = [
         name='activate_secondary_email'
     ),
 
+    url(r'^save_for_later$', views.save_for_later_course, name="save_for_later"),
+
 ]

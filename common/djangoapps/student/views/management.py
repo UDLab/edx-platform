@@ -56,7 +56,7 @@ from openedx.core.djangolib.markup import HTML, Text
 from openedx.features.enterprise_support.utils import is_enterprise_learner
 from common.djangoapps.student.email_helpers import generate_activation_email_context
 from common.djangoapps.student.helpers import DISABLE_UNENROLL_CERT_STATES, cert_info
-from common.djangoapps.student.message_types import AccountActivation, EmailChange, EmailChangeConfirmation, RecoveryEmailCreate  # lint-amnesty, pylint: disable=line-too-long
+from common.djangoapps.student.message_types import AccountActivation, EmailChange, EmailChangeConfirmation, RecoveryEmailCreate, SaveForLatter  # lint-amnesty, pylint: disable=line-too-long
 from common.djangoapps.student.models import (  # lint-amnesty, pylint: disable=unused-import
     AccountRecovery,
     CourseEnrollment,
@@ -75,6 +75,7 @@ from common.djangoapps.student.signals import REFUND_ORDER
 from common.djangoapps.util.db import outer_atomic
 from common.djangoapps.util.json_request import JsonResponse
 from xmodule.modulestore.django import modulestore
+from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 
 log = logging.getLogger("edx.student")
 
@@ -926,3 +927,42 @@ def change_email_settings(request):
         )
 
     return JsonResponse({"success": True})
+
+
+@ensure_csrf_cookie
+def save_for_later_course(request):
+    """
+      Send email to learner for save for latter course.
+    """
+    if request.user.is_authenticated:
+        user = request.user
+        course_id = request.POST.get('course_id')
+
+        try:
+            course_overview = CourseOverview.objects.first()
+        except CourseOverview.DoesNotExist:
+            return JsonResponse({"success": False, "status": 404}, status=404)
+
+        message_context = {
+            'course_image_url': course_overview.course_image_url,
+            'display_name': course_overview.display_name,
+            'short_description': course_overview.short_description,
+            'lms_url': configuration_helpers.get_value('LMS_ROOT_URL', settings.LMS_ROOT_URL),
+            'from_address': configuration_helpers.get_value('email_from_address', settings.DEFAULT_FROM_EMAIL),
+        }
+
+        msg = SaveForLatter().personalize(
+            recipient=Recipient(user.id, user.email),
+            language=preferences_api.get_user_preference(user, LANGUAGE_KEY),
+            user_context=message_context,
+        )
+        try:
+            ace.send(msg)
+        except Exception:  # pylint: disable=broad-except
+            log.warning('Unable to send save for latter email ', exc_info=True)
+            transaction.set_rollback(True)
+            return JsonResponse({"success": False, "status": 400}, status=400)
+        else:
+            return JsonResponse({"success": True, "status": 200}, status=200)
+    else:
+        return JsonResponse({"success": False, "status": 401}, status=401)
